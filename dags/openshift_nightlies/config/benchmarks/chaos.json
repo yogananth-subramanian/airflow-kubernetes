@@ -1,0 +1,9 @@
+{
+    "benchmarks": [
+        {
+            "name": "kraken",
+            "workload": "kraken",
+            "command": "./CI/run.sh"
+        }
+   ]
+}
