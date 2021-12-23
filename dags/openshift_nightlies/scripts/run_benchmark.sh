@@ -84,13 +84,19 @@ else
     ls
     cd e2e-benchmarking/workloads/$workload
     export UUID=$AIRFLOW_CTX_TASK_ID-$(date '+%Y%m%d')-$(uuidgen | head -c16)
-    
+    if [[ ${workload} == "kraken" ]]; then
+        cd /home/airflow/workspace
+        git clone -b main https://github.com/cloud-bulldozer/kraken-hub.git --depth=1 --single-branch
+        cd kraken-hub
+        for i in `cat  CI/tests/all_tests`; do sed -i 's/\/root\/.kube\/config/\/home\/airflow\/workspace\/config/' CI/tests/$i.sh; done
+        export CERBERUS_ENABLED=True
+    fi
     eval "$command"
     benchmark_rv=$?
 
     if [[ ${MUST_GATHER_EACH_TASK} == "true" && ${benchmark_rv} -eq 1 ]] ; then
         echo -e "must gather collection enabled for this task"
-        cd ../../utils/scale-ci-diagnosis
+        cd /home/airflow/workspace/e2e-benchmarking/utils/scale-ci-diagnosis
         export OUTPUT_DIR=$PWD
         export PROMETHEUS_CAPTURE=false
         export PROMETHEUS_CAPTURE_TYPE=full
