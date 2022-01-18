@@ -85,14 +85,41 @@ else
     cd e2e-benchmarking/workloads/$workload
     export UUID=$AIRFLOW_CTX_TASK_ID-$(date '+%Y%m%d')-$(uuidgen | head -c16)
     if [[ ${workload} == "kraken" ]]; then
+        echo "Orchestration host --> $ORCHESTRATION_HOST"
+        if [[ ! -d /tmp/perf-dept ]]; then
+	    git clone https://${SSHKEY_TOKEN}@github.com/redhat-performance/perf-dept.git /tmp/perf-dept
+	fi
+        export PUBLIC_KEY=/tmp/perf-dept/ssh_keys/id_rsa_pbench_ec2.pub
+        export PRIVATE_KEY=/tmp/perf-dept/ssh_keys/id_rsa_pbench_ec2
+        chmod 600 ${PRIVATE_KEY}
+
+        echo "Transfering the environment variables to the orchestration host"
+        scp -o 'StrictHostKeyChecking=no' -o 'UserKnownHostsFile=/dev/null' -i ${PRIVATE_KEY}  /home/kni/clusterconfigs/auth/kubeconfig root@${ORCHESTRATION_HOST}:/root/.kube/config
+
         cd /home/airflow/workspace
         git clone -b main https://github.com/cloud-bulldozer/kraken-hub.git --depth=1 --single-branch
         cd kraken-hub
-        for i in `cat  CI/tests/all_tests`; do sed -i 's/\/root\/.kube\/config/\/home\/airflow\/workspace\/config/' CI/tests/$i.sh; done
-        export CERBERUS_ENABLED=True
+        declare -A chaos_test
+        chaos_test=( [application-outages]=kraken:application-outages )       
+        echo “The ${command} is ${chaos_test[$command]}”
+        cat env.sh |sed 's/export/echo/'|bash >container.env
+        cat ${command}/env.sh |sed 's/export/echo/'|bash >>container.env
+        scp -o 'StrictHostKeyChecking=no' -o 'UserKnownHostsFile=/dev/null' -i ${PRIVATE_KEY} container.env root@$ORCHESTRATION_HOST:/root/kraken-hub/
+        ssh -o 'StrictHostKeyChecking=no' -o 'UserKnownHostsFile=/dev/null' -i ${PRIVATE_KEY} root@$ORCHESTRATION_HOST 'echo AWS_DEFAULT_REGION=`aws configure get default.region`>>/root/kraken-hub/aws.env'
+        ssh  -o 'StrictHostKeyChecking=no' -o 'UserKnownHostsFile=/dev/null' -i ${PRIVATE_KEY} root@$ORCHESTRATION_HOST 'echo AWS_ACCESS_KEY_ID=`aws configure get default.aws_access_key_id`>>/root/kraken-hub/aws.env'
+        ssh -o 'StrictHostKeyChecking=no' -o 'UserKnownHostsFile=/dev/null' -i ${PRIVATE_KEY} root@$ORCHESTRATION_HOST 'echo AWS_SECRET_ACCESS_KEY=`aws configure get default.aws_secret_access_key`>>/root/kraken-hub/aws.env'
+        echo "cd /root/kraken-hub/;podman run --env-file=container.env  --env-file=aws.env --name=application-outages --net=host  -v /root/.kube/config:/root/.kube/config:Z -d quay.io/openshift-scale/${chaos_test[$command]}"|ssh -o 'StrictHostKeyChecking=no' -o 'UserKnownHostsFile=/dev/null' -i ${PRIVATE_KEY} root@$ORCHESTRATION_HOST /bin/bash
+        exit_code=`echo "podman inspect ${command} --format json"|ssh -o 'StrictHostKeyChecking=no' -o 'UserKnownHostsFile=/dev/null' -i ${PRIVATE_KEY}  root@$ORCHESTRATION_HOST /bin/bash | jq .[].State.ExitCode`
+        if [[ 1 -ne $exit_code ]]; then
+            echo "podman logs -f ${command}"|ssh -o 'StrictHostKeyChecking=no' -o 'UserKnownHostsFile=/dev/null' -i ${PRIVATE_KEY} root@$ORCHESTRATION_HOST /bin/bash
+            exit_code=`echo "podman inspect ${command} --format json"|ssh -o 'StrictHostKeyChecking=no' -o 'UserKnownHostsFile=/dev/null' -i ${PRIVATE_KEY} root@$ORCHESTRATION_HOST /bin/bash | jq .[].State.ExitCode`
+        fi
+        echo "podman rm ${command}"|ssh -o 'StrictHostKeyChecking=no' -o 'UserKnownHostsFile=/dev/null' -i ${PRIVATE_KEY} root@$ORCHESTRATION_HOST /bin/bash
+        benchmark_rv=$exit_code
+    else 
+        eval "$command"
+        benchmark_rv=$?
     fi
-    eval "$command"
-    benchmark_rv=$?
 
     if [[ ${MUST_GATHER_EACH_TASK} == "true" && ${benchmark_rv} -eq 1 ]] ; then
         echo -e "must gather collection enabled for this task"
