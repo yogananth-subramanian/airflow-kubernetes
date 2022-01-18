@@ -1,0 +1,14 @@
+{
+    "benchmarks": [
+        {
+            "name": "chaos-test-application-outages",
+            "workload": "kraken",
+            "command": "application-outages",
+            "env": {
+                "WAIT_DURATION": "5",
+                "DURATION": "10",
+                "NAMESPACE": "openshift-monitoring"
+            }
+        }
+   ]
+}
