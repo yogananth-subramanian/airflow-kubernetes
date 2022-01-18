@@ -85,8 +85,22 @@ else
     cd e2e-benchmarking/workloads/$workload
     export UUID=$(uuidgen | head -c16)-$AIRFLOW_CTX_TASK_ID-$(date '+%Y%m%d')
     
-    eval "$command"
-    benchmark_rv=$?
+    if [[ ${workload} == "kraken" ]]; then
+        echo "Orchestration host --> $ORCHESTRATION_HOST"
+        if [[ ! -d /tmp/perf-dept ]]; then
+            git clone https://${SSHKEY_TOKEN}@github.com/redhat-performance/perf-dept.git /tmp/perf-dept
+        fi
+        export PUBLIC_KEY=/tmp/perf-dept/ssh_keys/id_rsa_pbench_ec2.pub
+        export PRIVATE_KEY=/tmp/perf-dept/ssh_keys/id_rsa_pbench_ec2
+        chmod 600 ${PRIVATE_KEY}
+
+        echo "Transfering the environment variables to the orchestration host"
+        scp -o 'StrictHostKeyChecking=no' -o 'UserKnownHostsFile=/dev/null' -i ${PRIVATE_KEY}  /home/kni/clusterconfigs/auth/kubeconfig root@${ORCHESTRATION_HOST}:/root/.kube/config
+
+    else 
+        eval "$command"
+        benchmark_rv=$?
+    fi
 
     if [[ ${MUST_GATHER_EACH_TASK} == "true" && ${benchmark_rv} -eq 1 ]] ; then
         echo -e "must gather collection enabled for this task"
