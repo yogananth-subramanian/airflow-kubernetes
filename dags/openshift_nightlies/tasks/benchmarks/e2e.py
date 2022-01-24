@@ -42,6 +42,13 @@ class E2EBenchmarks():
             "ES_GOLD": self.es_gold,
             "ES_SERVER_BASELINE": self.es_server_baseline
         }
+
+        self.env = {
+            **self.env,
+            "SSHKEY_TOKEN": self.config['sshkey_token'],
+            "ORCHESTRATION_USER": self.config['provisioner_user'],
+            "ORCHESTRATION_HOST": self.config['provisioner_hostname']
+        }
         self.env.update(self.dag_config.dependencies)
 
         if self.release.platform == "baremetal":
@@ -104,7 +111,12 @@ class E2EBenchmarks():
         benchmark >> indexer 
 
     def _get_benchmark(self, benchmark):
-        env = {**self.env, **benchmark.get('env', {}), **{"ES_SERVER": var_loader.get_secret('elasticsearch'), "KUBEADMIN_PASSWORD": environ.get("KUBEADMIN_PASSWORD", "")}}
+        if benchmark['workload'] == "kraken":
+            cerberus = var_loader.get_secret("ansible_orchestrator", deserialize_json=True)
+            task_env = { "CERBERUS_HOST": cerberus['orchestration_host'], **self.env}
+        else:
+            task_env = {**self.env}
+        env = {**task_env, **benchmark.get('env', {}), **{"ES_SERVER": var_loader.get_secret('elasticsearch'), "KUBEADMIN_PASSWORD": environ.get("KUBEADMIN_PASSWORD", "")}}
         task_prefix=f"{self.task_group}_"
         task = BashOperator(
                 task_id=f"{task_prefix if self.task_group != 'benchmarks' else ''}{benchmark['name']}",
