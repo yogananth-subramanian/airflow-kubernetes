@@ -104,7 +104,12 @@ class E2EBenchmarks():
         benchmark >> indexer 
 
     def _get_benchmark(self, benchmark):
-        env = {**self.env, **benchmark.get('env', {}), **{"ES_SERVER": var_loader.get_secret('elasticsearch'), "KUBEADMIN_PASSWORD": environ.get("KUBEADMIN_PASSWORD", "")}}
+        if benchmark['workload'] == "kraken":
+            cerberus = var_loader.get_secret("ansible_orchestrator", deserialize_json=True)
+            task_env = { "CERBERUS_HOST": cerberus['orchestration_host'], **self.env}
+        else:
+            task_env = {**self.env}
+        env = {**task_env, **benchmark.get('env', {}), **{"ES_SERVER": var_loader.get_secret('elasticsearch'), "KUBEADMIN_PASSWORD": environ.get("KUBEADMIN_PASSWORD", "")}}
         task_prefix=f"{self.task_group}_"
         task = BashOperator(
                 task_id=f"{task_prefix if self.task_group != 'benchmarks' else ''}{benchmark['name']}",
