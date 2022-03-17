@@ -8,6 +8,7 @@ from openshift_nightlies.models.dag_config import DagConfig
 import json
 from datetime import timedelta
 from airflow.operators.bash import BashOperator
+from airflow.operators.dummy_operator import DummyOperator
 from airflow.models import Variable
 from airflow.models import DAG
 from airflow.utils.task_group import TaskGroup
@@ -106,7 +107,15 @@ class E2EBenchmarks():
     def _get_benchmark(self, benchmark):
         env = {**self.env, **benchmark.get('env', {}), **{"ES_SERVER": var_loader.get_secret('elasticsearch'), "KUBEADMIN_PASSWORD": environ.get("KUBEADMIN_PASSWORD", "")}}
         task_prefix=f"{self.task_group}-"
-        task = BashOperator(
+        if benchmark['workload'] == "kraken":
+            task = DummyOperator(
+                task_id=f"{task_prefix if self.task_group != 'benchmarks' else ''}{benchmark['name']}",
+                depends_on_past=False,
+                retries=3,
+                dag=self.dag,
+            )
+        else:
+            task = BashOperator(
                 task_id=f"{task_prefix if self.task_group != 'benchmarks' else ''}{benchmark['name']}",
                 depends_on_past=False,
                 bash_command=f"{constants.root_dag_dir}/scripts/run_benchmark.sh -w {benchmark['workload']} -c {benchmark['command']} ",
@@ -116,7 +125,7 @@ class E2EBenchmarks():
                 do_xcom_push=True,
                 execution_timeout=timedelta(seconds=21600),
                 executor_config=self.exec_config
-        )
+            )
 
         self._add_indexer(task)
         return task
